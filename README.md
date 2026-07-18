@@ -14,12 +14,22 @@ A reproducible scientific language-model project that adapts
 2. **Group Relative Policy Optimization (GRPO)** using a frozen, groupwise
    LLM ranking judge.
 
-The central technical contribution is a groupwise reward design that prevents
+The central technical contribution is a groupwise reward design that addresses
 the zero-advantage problem caused by identical independent judge scores.
 
-> The selected checkpoint is the **25-step GRPO pilot**. The 100-step
-> checkpoint was effectively tied under direct pairwise judging, while the
-> 25-step model achieved slightly stronger overall ROUGE-L.
+> **Selected model:** the 25-step GRPO pilot. The 100-step checkpoint was
+> effectively tied under direct pairwise judging, while the 25-step checkpoint
+> achieved slightly stronger overall ROUGE-L.
+
+## Main finding
+
+Supervised fine-tuning produced the largest improvement over the base model.
+GRPO then provided a smaller additional gain, with the strongest checkpoint
+appearing after only 25 optimization steps.
+
+Extending GRPO to 100 steps did not produce a meaningful overall improvement.
+For this model and dataset, longer preference optimization was not
+automatically better.
 
 ## Key results
 
@@ -33,8 +43,8 @@ Weighted over the untouched 158-example test split:
 | GRPO final (100 steps) | 0.2832 | 0.0620 | 0.2075 | 0.2301 | 37.5 |
 
 The 25-step and 100-step checkpoints received weighted direct judge scores of
-**0.4968** and **0.5032**, respectively. Their difference was below the 0.01
-model-selection threshold.
+**0.4968** and **0.5032**, respectively. Their difference of **0.0063** was
+below the predefined **0.01** model-selection threshold.
 
 ![Overall test-set comparison](assets/overall_rouge_comparison.png)
 
@@ -53,25 +63,108 @@ flowchart LR
     I --> J[Select 25-step checkpoint]
 ```
 
-### Why groupwise ranking?
+## LLM-as-a-Judge reward design
 
-Independent numerical judging frequently assigned the same score to all four
-candidate responses. GRPO then produced zero relative advantages and no useful
-learning signal.
+GRPO used the frozen model `Qwen/Qwen2.5-0.5B-Instruct` as a groupwise
+LLM judge.
 
-The replacement reward presents all four candidates to the judge together and
-requires a strict ranking. For four candidates, ranks are mapped to:
+For each training prompt:
 
-```text
-1.00, 0.67, 0.33, 0.00
-```
+1. The policy generated four candidate responses.
+2. The judge received:
+   - the task category,
+   - the original prompt,
+   - the reference answer,
+   - and all four candidate responses.
+3. The judge returned a strict best-to-worst ranking with no ties.
+4. The ranking was converted to relative rewards:
 
-This produced a stable reward mean of 0.5 and nonzero within-group variance.
+| Rank | Reward |
+|---:|---:|
+| 1 | 1.00 |
+| 2 | 0.67 |
+| 3 | 0.33 |
+| 4 | 0.00 |
+
+Candidate presentation order was shuffled to reduce position bias. If the
+judge returned an invalid ranking, all candidates received a neutral reward
+of `0.5`.
+
+The judge model remained frozen throughout training. Only the policy's LoRA
+parameters were updated.
+
+### Why independent scoring failed
+
+The first reward implementation evaluated each candidate independently using
+a numerical score. The judge often assigned the same score to every response
+within a generation group.
+
+Because GRPO learns from relative performance inside each group, identical
+rewards produced zero reward variance and therefore zero useful advantage.
+
+The groupwise ranking formulation forced relative differentiation among the
+four candidates and substantially reduced the zero-advantage problem. During
+the validated pilot run, reward variance remained nonzero for nearly all
+training groups.
+
+## Experiment configuration
+
+| Component | Configuration |
+|---|---|
+| Base model | `HuggingFaceTB/SmolLM2-135M-Instruct` |
+| Training dataset | `Miladsaeedi70/scientific-multitask-instructions` |
+| SFT method | LoRA |
+| LoRA rank | 16 |
+| LoRA alpha | 32 |
+| LoRA dropout | 0.05 |
+| LoRA target modules | All linear layers |
+| Maximum SFT sequence length | 512 |
+| SFT epochs | 3 |
+| Effective SFT batch size | 16 |
+| SFT optimizer steps | 237 |
+| GRPO starting policy | Scientific SFT LoRA adapter |
+| Judge model | `Qwen/Qwen2.5-0.5B-Instruct` |
+| Candidates per prompt | 4 |
+| Maximum prompt length | 384 |
+| Maximum completion length | 128 |
+| GRPO pilot | 25 steps, KL beta `0.0` |
+| Longer GRPO run | 100 steps, KL beta `0.001` |
+| Random seed | 42 |
+
+## Checkpoint evaluation and selection
+
+The Base, SFT, 25-step GRPO, and 100-step GRPO checkpoints were evaluated on
+the untouched 158-example test split.
+
+Evaluation included:
+
+- ROUGE-1, ROUGE-2, ROUGE-L, and ROUGE-Lsum
+- Mean response length
+- Task-level performance
+- Pairwise LLM judging
+
+For pairwise evaluation, candidate order was reversed and evaluated again to
+reduce A/B position bias.
+
+The 25-step and 100-step checkpoints received judge scores of `0.4968` and
+`0.5032`. The difference of `0.0063` was below the predefined `0.01`
+selection threshold, so ROUGE-L was used as the tiebreaker.
+
+The 25-step checkpoint was selected because its ROUGE-L score was `0.2088`,
+compared with `0.2075` for the 100-step checkpoint.
+
+## Public artifacts
+
+| Artifact | Repository |
+|---|---|
+| Dataset | [`Miladsaeedi70/scientific-multitask-instructions`](https://huggingface.co/datasets/Miladsaeedi70/scientific-multitask-instructions) |
+| SFT adapter | [`Miladsaeedi70/smollm2-135m-scientific-sft-lora`](https://huggingface.co/Miladsaeedi70/smollm2-135m-scientific-sft-lora) |
+| Selected GRPO adapter | [`Miladsaeedi70/smollm2-135m-scientific-grpo-lora`](https://huggingface.co/Miladsaeedi70/smollm2-135m-scientific-grpo-lora) |
 
 ## Local demo
 
-The repository includes a Gradio demo that runs locally on the user's computer.
-It does not require deployment to a Hugging Face Space.
+The repository includes a Gradio demo that runs locally on the user's
+computer. It does not require deployment to a Hugging Face Space.
 
 The first run downloads:
 
@@ -81,10 +174,6 @@ The first run downloads:
   `Miladsaeedi70/smollm2-135m-scientific-grpo-lora`
 
 The downloaded files are cached by Hugging Face for later runs.
-
-> **Required before sharing this repository:** the selected GRPO adapter must be
-> public. If the adapter is private, other users will not be able to run the
-> demo without authentication.
 
 ## Run the local demo
 
@@ -300,24 +389,43 @@ python -m pip install --upgrade pip
 pip install --force-reinstall -r requirements.txt
 ```
 
-## Evaluation cautions
+## Limitations
 
-- ROUGE measures reference overlap, not factual correctness.
-- The same judge family contributed to training and evaluation, so pairwise
-  results are not fully independent.
-- The base model has only 135M parameters.
-- Task-level performance varies; code generation and technical simplification
-  did not improve consistently.
-- Outputs must be independently checked for high-stakes scientific use.
+- The base model contains only 135M parameters.
+- Model outputs may contain scientific inaccuracies or unsupported claims.
+- ROUGE measures lexical overlap and does not directly measure factuality.
+- An LLM judge can introduce position bias, verbosity bias, and model-family
+  preferences.
+- The reference answer may influence judge rankings even when another valid
+  response uses different wording.
+- Reversed candidate ordering reduces but does not eliminate judge bias.
+- The judge used for reward generation is not a substitute for expert human
+  evaluation.
+- Results are based primarily on one random seed.
+- Performance varies by task; code generation and technical simplification
+  did not consistently improve after GRPO.
+- The model should not be used as the sole source for high-stakes scientific,
+  medical, legal, environmental, or engineering decisions.
 
-## Roadmap
+Important scientific claims should be independently verified.
 
-- [x] Create the multi-task scientific dataset
+## Project status
+
+- [x] Create and validate the scientific instruction dataset
 - [x] Publish the dataset on Hugging Face
-- [x] Complete LoRA SFT
-- [x] Complete groupwise-judge GRPO experiments
+- [x] Complete tokenizer analysis
+- [x] Complete LoRA supervised fine-tuning
+- [x] Complete 25-step and 100-step GRPO experiments
+- [x] Select the best checkpoint
+- [x] Publish the selected GRPO adapter
 - [x] Add a locally runnable Gradio demo
-- [ ] Make the selected GRPO adapter public
-- [ ] Add evaluation with a second independent judge model
+- [ ] Add evaluation with an independent judge family
+- [ ] Add human evaluation
 - [ ] Add bootstrap confidence intervals
-- [ ] Add human review of a stratified response sample
+- [ ] Repeat GRPO with multiple random seeds
+
+## License
+
+This project is released under the Apache 2.0 license. See [LICENSE](LICENSE).
+
+The base model is distributed separately under its own license.
