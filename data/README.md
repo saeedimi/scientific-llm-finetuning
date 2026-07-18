@@ -1,31 +1,38 @@
-# Dataset
+## Dataset
 
-The training dataset is intentionally not included in this repository.
+The dataset is publicly available on the Hugging Face Hub:
 
-Expected Hugging Face `DatasetDict` structure:
+**[Miladsaeedi70/scientific-multitask-instructions](https://huggingface.co/datasets/Miladsaeedi70/scientific-multitask-instructions)**
 
-```text
-train:      1,260 examples
-validation:   158 examples
-test:         158 examples
-```
+It contains **1,576 scientific instruction-following examples** across eight tasks, including scientific question answering, summarization, concept explanation, method comparison, technical simplification, bullet generation, data analysis, and code generation.
 
-Expected columns:
+### Dataset splits
 
-```text
-id
-category
-task
-difficulty
-messages
-```
+| Split | Examples |
+|---|---:|
+| Train | 1,260 |
+| Validation | 158 |
+| Test | 158 |
+| **Total** | **1,576** |
 
-Before publishing the dataset, verify:
+### Dataset fields
 
-- No private or identifying information
-- No API keys or secrets
-- No restricted copyrighted passages
-- Clear documentation of synthetic and human-written content
-- Duplicate and near-duplicate checks
-- Group-aware splitting to prevent prompt leakage
-- A dataset card with provenance, license, limitations, and intended use
+Each example contains:
+
+- `id`: unique example identifier
+- `category`: scientific subject category
+- `task`: instruction task
+- `difficulty`: difficulty level
+- `messages`: system, user, and assistant messages in conversational format
+
+### Load the dataset
+
+```python
+from datasets import load_dataset
+
+dataset = load_dataset(
+    "Miladsaeedi70/scientific-multitask-instructions"
+)
+
+print(dataset)
+print(dataset["train"][0])
