@@ -191,6 +191,4 @@ Detailed notes are in [`docs/methodology.md`](docs/methodology.md).
 - [ ] Add bootstrap confidence intervals for metric differences
 - [ ] Add human review of a stratified response sample
 
-## Citation
 
-See [`CITATION.cff`](CITATION.cff).
