@@ -1,0 +1,9 @@
+{
+  "selected_checkpoint": "GRPO pilot",
+  "selected_training_steps": 25,
+  "selection_reason": "The direct pairwise judge difference between 25 and 100 steps was below 0.01, while the 25-step checkpoint achieved higher overall ROUGE-L.",
+  "pilot_pairwise_judge_score": 0.49683543037974687,
+  "final_pairwise_judge_score": 0.5031645696202531,
+  "pilot_rougeL": 0.20877887974683543,
+  "final_rougeL": 0.2074814050632911
+}
